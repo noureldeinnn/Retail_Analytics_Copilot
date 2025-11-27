@@ -44,6 +44,10 @@ from langgraph.graph import StateGraph, START, END
 from agent.tools import sqlite_tool
 from agent.rag import retrieval
 
+import os
+from datetime import datetime
+
+
 # ---------- LLM / Ollama helper ----------
 
 MODEL_NAME = "phi3.5:3.8b-mini-instruct-q4_K_M"
@@ -67,6 +71,55 @@ def call_llm(prompt: str) -> str:
 
     return response.get("response", "").strip()
 
+# ---------- Tracing helper function ----------
+
+def _save_trace_to_file(qid: str, state: AgentState, output: Dict[str, Any]) -> None:
+    """
+    Save a replayable trace for one question into logs/trace_..._<id>.log.
+    This does NOT change the output contract, it's just side-effect logging.
+    """
+    os.makedirs("logs", exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    safe_id = qid or "no_id"
+    filename = f"logs/trace_{timestamp}_{safe_id}.log"
+
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write("=== Retail Analytics Copilot Trace ===\n")
+        f.write(f"ID: {safe_id}\n")
+        f.write(f"Timestamp: {timestamp}\n\n")
+
+        f.write("Question:\n")
+        f.write(state.get("question", "") + "\n\n")
+
+        f.write("Route:\n")
+        f.write(str(state.get("route", "")) + "\n\n")
+
+        f.write("Trace steps:\n")
+        for step in state.get("trace", []):
+            f.write(f"  - {step}\n")
+        f.write("\n")
+
+        f.write("Planner Notes:\n")
+        f.write(str(state.get("planner_notes", "")) + "\n\n")
+
+        f.write("SQL:\n")
+        f.write(state.get("sql", "") + "\n\n")
+
+        f.write("SQL Results:\n")
+        f.write(str(state.get("sql_result", "")) + "\n\n")
+
+        f.write("Final Answer:\n")
+        f.write(str(output.get("final_answer")) + "\n\n")
+
+        f.write("Citations:\n")
+        f.write(", ".join(output.get("citations", [])) + "\n\n")
+
+        f.write("Explanation:\n")
+        f.write(output.get("explanation", "") + "\n\n")
+
+    # Optional: small console hint
+    print(f"[trace saved] {filename}")
 
 # ---------- Router ----------
 
@@ -550,7 +603,7 @@ def answer_question_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     citations = _extract_citations(result)
     confidence = _estimate_confidence(result.get("error"), result.get("attempts", 0))
 
-    return {
+    output = {
         "id": qid,
         "final_answer": final_answer,
         "sql": result.get("sql", "") or "",
@@ -559,6 +612,9 @@ def answer_question_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
         "citations": citations,
     }
 
+    _save_trace_to_file(qid, result, output)
+
+    return output
 
 # ---------- Manual self-test ----------
 
