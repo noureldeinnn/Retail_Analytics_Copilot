@@ -1,4 +1,4 @@
-dspy-ai>=2.4.0
+dspy-ai>=2.6.0
 langgraph>=0.1.0
 langchain-core>=0.2.0
 pydantic>=2.0.0
